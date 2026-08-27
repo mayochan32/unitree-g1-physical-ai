@@ -1,0 +1,14 @@
+# PC側パイプラインの依存
+#   pip install -r requirements.txt
+
+openai>=1.40.0
+numpy>=1.24.0
+websockets>=12.0
+
+# 24kHz→16kHzのリサンプルに使う。無くても線形補間で動くが、
+# resample_poly(up=2, down=3) の方が音質が良いので入れることを推奨。
+scipy>=1.10.0
+
+# PCのマイク/スピーカーを使う場合のみ必要
+#   --source local-mic / --sink local-speaker
+sounddevice>=0.4.6
