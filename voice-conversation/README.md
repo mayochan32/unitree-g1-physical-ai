@@ -10,14 +10,15 @@ Unitree G1上で音声による会話を成立させる。マイク入力→音�
 
 ```
 G1マイク ──マルチキャスト──> PC ──STT──> LLM ──TTS──> ブリッジ ──> G1スピーカー
-         (SDK不要)                (OpenAI)              (WebSocket)
+         (SDK不要)                (OpenAI)                 (TCP)
 ```
 
-設計上の要点は3つ。
+設計上の要点は4つ。
 
 1. **マイク入力にSDKは要らない** — 素のUDPマルチキャスト受信なのでWindowsでも動く。SDK（DDS）が必要なのはスピーカー出力側だけ。
-2. **SDK依存はG1側のブリッジに閉じ込める** — PC側の依存は `openai` と `websockets` だけになり、OSを問わない。
-3. **I/Oを差し替え可能にしてある** — G1が無くてもPCのマイク/スピーカーで開発でき、当日は設定切り替えだけで済む。
+2. **SDK依存はG1側のブリッジに閉じ込める** — PC側の依存は `openai` だけになり、OSを問わない。
+3. **G1の環境を変更しない** — G1は共有機材なので、ブリッジは**Python標準ライブラリだけ**で動くように書いてある。`pip install` も `sudo` も不要。音量は起動時に記録し終了時に元へ戻す。
+4. **I/Oを差し替え可能にしてある** — G1が無くてもPCのマイク/スピーカーで開発でき、当日は設定切り替えだけで済む。
 
 ## クイックスタート
 
@@ -41,6 +42,7 @@ python -m pc_pipeline.main --source g1-multicast --sink g1-bridge
 | G1にSSHできない（縮退運転） | `--source g1-multicast --sink local-speaker` |
 | マルチキャストが届かない | `--source g1-bridge --sink g1-bridge` |
 | PCがLinuxでSDKが入っている | `--source g1-multicast --sink g1-direct` |
+| TCP版で問題が出た（バックアップ） | `--source g1-multicast --sink g1-bridge-ws` |
 
 その他のオプション:
 
@@ -63,9 +65,9 @@ python tools/check_mic.py --local-ip 192.168.123.99
 #    声を出してRMSが跳ね上がればOK
 #    --save mic.wav を付ければ録音して後で耳で確認できる
 
-# 3. G1にSSHしてブリッジを起動
-scp g1_bridge/bridge_server.py unitree@192.168.123.164:~/
-ssh unitree@192.168.123.164 "pip3 install websockets && python3 bridge_server.py --iface eth0"
+# 3. G1にSSHしてブリッジを起動（インストール不要。/tmpに置くので痕跡が残らない）
+scp g1_bridge/bridge_server.py unitree@192.168.123.164:/tmp/
+ssh unitree@192.168.123.164 "python3 /tmp/bridge_server.py --iface eth0"
 
 # 4. スピーカーが鳴るか（PC側から。SDK不要）
 python tools/check_bridge.py --host 192.168.123.164
@@ -94,16 +96,24 @@ python -m pc_pipeline.main --source g1-multicast --sink g1-bridge
 | `stt.py` / `llm.py` / `tts.py` | OpenAI連携。`llm.py` はGDL人格の注入と文単位ストリーミングに対応 |
 | `pipeline.py` | 状態機械（IDLE→LISTENING→THINKING→SPEAKING）とエコー対策 |
 | `main.py` | CLIエントリポイント |
-| `audio_io/` | 音声I/Oの抽象と6つの実装（G1／ローカル／ブリッジ） |
+| `audio_io/` | 音声I/Oの抽象と8つの実装（G1／ローカル／ブリッジTCP／ブリッジWS） |
 
 ### G1側ブリッジ（`g1_bridge/`）
 
-G1のPC2上で動かす中継サーバ。WebSocketでPCMを受け取り `AudioClient.PlayStream()` を呼ぶ。デプロイ手順は `g1_bridge/README.md`。
+G1のPC2上で動かす中継サーバ。PCMを受け取り `AudioClient.PlayStream()` を呼ぶ。デプロイ手順は `g1_bridge/README.md`。
+
+| ファイル | 通信方式 | G1側の追加インストール | 位置づけ |
+|---|---|---|---|
+| `bridge_server.py` | 素のTCP | **不要**（標準ライブラリのみ） | **本命** |
+| `bridge_server_ws.py` | WebSocket | `websockets` が必要 | バックアップ |
+
+G1は共有機材なので、環境を変えずに済むTCP版を使う。
 
 ### 疎通確認ツール（`tools/`）
 
 - `check_mic.py` — マイクのマルチキャストが届くか（SDK不要、Windows可）
-- `check_bridge.py` — ブリッジ経由でスピーカーが鳴るか（SDK不要、Windows可）
+- `check_bridge.py` — ブリッジ経由でスピーカーが鳴るか（SDK不要、Windows可）。`--mic 5` でマイク中継も確認できる
+- `check_bridge_ws.py` — 同上のWebSocket版（バックアップ手順用）
 - `check_speaker.py` — SDK直接でスピーカーが鳴るか（G1のPC2上で実行）
 
 ### 旧アダプタ（GDL統合用）

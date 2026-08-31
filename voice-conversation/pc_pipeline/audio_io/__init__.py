@@ -5,6 +5,13 @@ pc_pipeline.audio_io
 
 実装は遅延インポートする（各実装が sounddevice / websockets / unitree_sdk2py
 といった別々のオプション依存を持つため、使わない実装の依存で落ちないように）。
+
+ブリッジ経由の実装は2系統ある。
+
+  g1-bridge     … 素のTCP（既定・推奨）
+                  G1側は標準ライブラリだけで動くので、共有機材に何も入れずに済む
+  g1-bridge-ws  … WebSocket（バックアップ）
+                  G1側に websockets が必要。TCP版がうまくいかない場合の代替
 """
 
 from __future__ import annotations
@@ -21,8 +28,8 @@ __all__ = [
     "SINK_CHOICES",
 ]
 
-SOURCE_CHOICES = ("g1-multicast", "g1-bridge", "local-mic")
-SINK_CHOICES = ("g1-bridge", "g1-direct", "local-speaker")
+SOURCE_CHOICES = ("g1-multicast", "g1-bridge", "g1-bridge-ws", "local-mic")
+SINK_CHOICES = ("g1-bridge", "g1-bridge-ws", "g1-direct", "local-speaker")
 
 
 def create_source(kind: str, config) -> AudioSource:
@@ -36,6 +43,11 @@ def create_source(kind: str, config) -> AudioSource:
         from .g1_bridge_source import G1BridgeSource
 
         return G1BridgeSource(config.network)
+
+    if kind == "g1-bridge-ws":
+        from .g1_bridge_ws_source import G1BridgeWsSource
+
+        return G1BridgeWsSource(config.network)
 
     if kind == "local-mic":
         from .local_mic_source import LocalMicSource
@@ -51,6 +63,11 @@ def create_sink(kind: str, config) -> AudioSink:
         from .g1_bridge_sink import G1BridgeSink
 
         return G1BridgeSink(config.network)
+
+    if kind == "g1-bridge-ws":
+        from .g1_bridge_ws_sink import G1BridgeWsSink
+
+        return G1BridgeWsSink(config.network)
 
     if kind == "g1-direct":
         from .g1_direct_sink import G1DirectSink
