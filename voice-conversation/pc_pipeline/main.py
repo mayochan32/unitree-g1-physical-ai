@@ -97,7 +97,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  出力: {args.sink}")
     print(f"  STT : {config.openai.stt_model}")
     print(f"  LLM : {config.openai.llm_model}")
-    print(f"  TTS : {config.openai.tts_model} / voice={config.openai.tts_voice}")
+    if config.openai.tts_provider == "elevenlabs":
+        print(
+            f"  TTS : elevenlabs / model={config.openai.elevenlabs_model} "
+            f"/ voice_id={config.openai.elevenlabs_voice_id}"
+        )
+    else:
+        print(f"  TTS : {config.openai.tts_model} / voice={config.openai.tts_voice}")
     if config.gdl_profile_path:
         print(f"  GDL : {config.gdl_profile_path}")
     print("=" * 60)

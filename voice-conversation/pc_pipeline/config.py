@@ -91,8 +91,18 @@ class OpenAIConfig:
 
     stt_model: str = field(default_factory=lambda: _env("STT_MODEL", "gpt-4o-transcribe"))
     llm_model: str = field(default_factory=lambda: _env("LLM_MODEL", "gpt-4o-mini"))
+    tts_provider: str = field(default_factory=lambda: _env("TTS_PROVIDER", "openai").lower())
     tts_model: str = field(default_factory=lambda: _env("TTS_MODEL", "gpt-4o-mini-tts"))
     tts_voice: str = field(default_factory=lambda: _env("TTS_VOICE", "alloy"))
+    elevenlabs_api_key: str = field(
+        default_factory=lambda: os.environ.get("ELEVENLABS_API_KEY", "")
+    )
+    elevenlabs_voice_id: str = field(
+        default_factory=lambda: _env("ELEVENLABS_VOICE_ID", "")
+    )
+    elevenlabs_model: str = field(
+        default_factory=lambda: _env("ELEVENLABS_MODEL", "eleven_v3")
+    )
 
     # 音声の言語。日本語なら "ja" を明示した方が精度・速度ともに安定する。
     language: str = field(default_factory=lambda: _env("SPEECH_LANGUAGE", "ja"))

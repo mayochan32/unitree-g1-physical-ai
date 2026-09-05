@@ -33,6 +33,25 @@ python -m pc_pipeline.main --source local-mic --sink local-speaker
 python -m pc_pipeline.main --source g1-multicast --sink g1-bridge
 ```
 
+### ElevenLabsをTTSに使う
+
+STT/LLMはOpenAIのまま、TTSだけをElevenLabsへ切り替えられる。ElevenLabsの
+Voice IDをVoiceLabまたはvoice一覧から取得し、PowerShellで設定する。
+
+```powershell
+$env:TTS_PROVIDER="elevenlabs"
+$env:ELEVENLABS_API_KEY="..."
+$env:ELEVENLABS_VOICE_ID="..."
+# 任意。既定は eleven_v3
+$env:ELEVENLABS_MODEL="eleven_v3"
+
+python -m pc_pipeline.main --source g1-bridge --sink g1-bridge
+```
+
+ElevenLabsには24kHz PCMを要求し、既存パイプラインがG1用の16kHz PCMに変換する。
+既定のOpenAI TTSへ戻すには `$env:TTS_PROVIDER="openai"` を設定するか、新しい
+ターミナルを開く。
+
 `--source` / `--sink` の組み合わせで状況に応じて切り替える。
 
 | 状況 | コマンド |

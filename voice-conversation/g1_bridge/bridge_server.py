@@ -133,12 +133,21 @@ class SpeakerPlayer:
     def __init__(self, iface: str, timeout_sec: float = 10.0):
         from unitree_sdk2py.core.channel import ChannelFactoryInitialize
         from unitree_sdk2py.g1.audio.g1_audio_client import AudioClient
+        from unitree_sdk2py.rpc.client import Client
 
         ChannelFactoryInitialize(0, iface)
+        # G1上のDDS discoveryが完了してからvoice APIを初期化する。
+        time.sleep(0.5)
+        self._voice = Client("voice", False)
+        self._voice.SetTimeout(timeout_sec)
+        self._voice._SetApiVerson("1.0.0.0")
+        for api_id in range(1001, 1020):
+            self._voice._RegistApi(api_id, 0)
         self._client = AudioClient()
         self._client.SetTimeout(timeout_sec)
         self._client.Init()
         self._lock = threading.Lock()
+        self._mic_lock = threading.Lock()
 
         # 共有機材への配慮：元の音量を覚えておき、終了時に戻す
         self._original_volume = self._read_volume()
@@ -163,6 +172,16 @@ class SpeakerPlayer:
     def set_volume(self, volume: int) -> None:
         self._client.SetVolume(volume)
 
+    def set_mic_enabled(self, enabled: bool) -> None:
+        """voice API 1008でマイクのマルチキャスト配信を切り替える。"""
+        mode = 1 if enabled else 2
+        with self._mic_lock:
+            code, _data = self._voice._Call(1008, json.dumps({"mode": mode}))
+        print(f"[bridge] マイク SetMode({mode}) code={code}", flush=True)
+        if code != 0:
+            state = "有効化" if enabled else "無効化"
+            raise RuntimeError(f"マイクの{state}に失敗: code={code}")
+
     def play_blocking(self, pcm: bytes) -> None:
         """
         PCMを再生する。実際に鳴り終わるまでブロックする。
@@ -179,9 +198,10 @@ class SpeakerPlayer:
             offset = 0
             while offset < len(pcm):
                 chunk = pcm[offset : offset + CHUNK_BYTES]
-                code = self._client.PlayStream(APP_NAME, stream_id, chunk)
+                result = self._client.PlayStream(APP_NAME, stream_id, chunk)
+                code = result[0] if isinstance(result, tuple) else result
                 if code != 0:
-                    raise RuntimeError(f"PlayStream失敗: code={code}")
+                    raise RuntimeError(f"PlayStream失敗: code={result}")
                 offset += len(chunk)
                 if offset < len(pcm):
                     time.sleep(CHUNK_SLEEP_SEC)
@@ -201,6 +221,10 @@ class SpeakerPlayer:
     def restore(self) -> None:
         """終了時に呼ぶ。再生を止め、音量を元に戻す。"""
         self.stop()
+        try:
+            self.set_mic_enabled(False)
+        except Exception as exc:
+            print(f"[bridge] マイクの無効化に失敗: {exc}", flush=True)
         if self._original_volume is not None:
             try:
                 self._client.SetVolume(self._original_volume)
@@ -331,10 +355,16 @@ class Connection:
     def _start_mic(self) -> None:
         if self._mic_thread is not None:
             return
+        try:
+            self._player.set_mic_enabled(True)
+        except Exception as exc:
+            self._send_json({"type": "error", "message": str(exc)})
+            print(f"[bridge] マイクの有効化に失敗: {exc}", flush=True)
+            return
         self._mic_running.set()
         self._mic_thread = threading.Thread(target=self._mic_loop, daemon=True)
         self._mic_thread.start()
-        print("[bridge] マイク中継を開始", flush=True)
+        print("[bridge] マイクを有効化し、中継を開始", flush=True)
 
     def _stop_mic(self) -> None:
         if self._mic_thread is None:
@@ -342,9 +372,14 @@ class Connection:
         self._mic_running.clear()
         self._mic_thread.join(timeout=2.0)
         self._mic_thread = None
-        print("[bridge] マイク中継を停止", flush=True)
+        try:
+            self._player.set_mic_enabled(False)
+            print("[bridge] マイクを無効化し、中継を停止", flush=True)
+        except Exception as exc:
+            print(f"[bridge] マイクの無効化に失敗: {exc}", flush=True)
 
     def _mic_loop(self) -> None:
+        packet_count = 0
         try:
             sock = open_mic_socket()
         except OSError as exc:
@@ -359,6 +394,9 @@ class Connection:
                 except OSError:
                     break
                 if data:
+                    packet_count += 1
+                    if packet_count == 1:
+                        print(f"[bridge] マイクPCMを受信 ({len(data)}バイト)", flush=True)
                     try:
                         self._send_pcm(data)
                     except (BrokenPipeError, ConnectionResetError, OSError):
